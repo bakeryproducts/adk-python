@@ -349,12 +349,15 @@ class DatabaseSessionService(BaseSessionService):
           .filter(StorageEvent.session_id == storage_session.id)
           .filter(
               StorageEvent.timestamp < config.after_timestamp
-              if config
+              if config and config.after_timestamp
               else True
           )
-          .limit(config.num_recent_events if config else None)
+          .order_by(StorageEvent.timestamp.desc())  # Order by newest first
+          .limit(config.num_recent_events if config and config.num_recent_events else None)
           .all()
       )
+      # from oldest to newest:
+      storage_events.reverse()
 
       # Fetch states from storage
       storage_app_state = sessionFactory.get(StorageAppState, (app_name))
@@ -536,7 +539,38 @@ class DatabaseSessionService(BaseSessionService):
       user_id: str,
       session_id: str,
   ) -> ListEventsResponse:
-    raise NotImplementedError()
+    with self.DatabaseSessionFactory() as sessionFactory:
+      storage_events = (
+          sessionFactory.query(StorageEvent)
+          .filter(StorageEvent.app_name == app_name)
+          .filter(StorageEvent.user_id == user_id)
+          .filter(StorageEvent.session_id == session_id)
+          .order_by(StorageEvent.timestamp.desc())  # Order by newest first
+          .all()
+      )
+      
+      events = [
+          Event(
+              id=e.id,
+              author=e.author,
+              branch=e.branch,
+              invocation_id=e.invocation_id,
+              content=_decode_content(e.content),
+              actions=e.actions,
+              timestamp=e.timestamp.timestamp(),
+              long_running_tool_ids=e.long_running_tool_ids,
+              grounding_metadata=e.grounding_metadata,
+              partial=e.partial,
+              turn_complete=e.turn_complete,
+              error_code=e.error_code,
+              error_message=e.error_message,
+              interrupted=e.interrupted,
+          )
+          for e in storage_events
+      ]
+      
+      return ListEventsResponse(events=events)
+
 
 def convert_event(event: StorageEvent) -> Event:
   """Converts a storage event to an event."""

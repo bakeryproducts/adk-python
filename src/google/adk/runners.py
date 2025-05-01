@@ -38,7 +38,7 @@ from .artifacts.in_memory_artifact_service import InMemoryArtifactService
 from .events.event import Event
 from .memory.base_memory_service import BaseMemoryService
 from .memory.in_memory_memory_service import InMemoryMemoryService
-from .sessions.base_session_service import BaseSessionService
+from .sessions.base_session_service import BaseSessionService, GetSessionConfig
 from .sessions.in_memory_session_service import InMemorySessionService
 from .sessions.session import Session
 from .telemetry import tracer
@@ -159,6 +159,7 @@ class Runner:
       session_id: str,
       new_message: types.Content,
       run_config: RunConfig = RunConfig(),
+      session_config: Optional[GetSessionConfig] = None,
   ) -> AsyncGenerator[Event, None]:
     """Main entry method to run the agent in this runner.
 
@@ -173,7 +174,10 @@ class Runner:
     """
     with tracer.start_as_current_span('invocation'):
       session = self.session_service.get_session(
-          app_name=self.app_name, user_id=user_id, session_id=session_id
+          app_name=self.app_name,
+          user_id=user_id,
+          session_id=session_id,
+          config=session_config,
       )
       if not session:
         raise ValueError(f'Session not found: {session_id}')

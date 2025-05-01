@@ -322,7 +322,8 @@ async def _process_function_live_helper(
             invocation_context=invocation_context,
         ):
           updated_content = types.Content(
-              role='user',
+              # role='user',
+              role='model',
               parts=[
                   types.Part.from_text(
                       text=f'Function {tool.name} returned: {result}'
@@ -425,7 +426,8 @@ def __build_response_event(
     part_function_response.function_response.id = tool_context.function_call_id
 
     content = types.Content(
-        role='user',
+        # role='user',
+        role='model',
         parts=[part_function_response],
     )
 
