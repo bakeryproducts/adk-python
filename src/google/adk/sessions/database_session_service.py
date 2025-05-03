@@ -219,6 +219,7 @@ class StorageAppState(Base):
       DateTime(), default=func.now(), onupdate=func.now()
   )
 
+
 class StorageUserState(Base):
   """Represents a user state stored in the database."""
 
@@ -593,6 +594,7 @@ class DatabaseSessionService(BaseSessionService):
       ]
       
       return ListEventsResponse(events=events)
+
 
 
 def convert_event(event: StorageEvent) -> Event:
