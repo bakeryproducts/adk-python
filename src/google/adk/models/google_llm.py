@@ -79,7 +79,7 @@ class Gemini(BaseLlm):
       LlmResponse: The model response.
     """
 
-    self._maybe_append_user_content(llm_request)
+    # self._maybe_append_user_content(llm_request)
     logger.info(
         'Sending out request, model: %s, backend: %s, stream: %s',
         llm_request.model,
