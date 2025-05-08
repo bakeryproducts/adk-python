@@ -595,6 +595,53 @@ class DatabaseSessionService(BaseSessionService):
       
       return ListEventsResponse(events=events)
 
+  @override
+  def remove_event(self, app_name: str, user_id: str, session_id: str, event_id: str) -> None:
+    """
+    Remove an event from the database.
+
+    Args:
+        app_name: The application name.
+        user_id: The user ID.
+        session_id: The session ID.
+        event_id: The ID of the event to remove.
+    """
+    with self.DatabaseSessionFactory() as sessionFactory:
+      stmt = delete(StorageEvent).where(
+          StorageEvent.app_name == app_name,
+          StorageEvent.user_id == user_id,
+          StorageEvent.session_id == session_id,
+          StorageEvent.id == event_id,
+      )
+      result = sessionFactory.execute(stmt)
+      if result.rowcount == 0:
+        raise ValueError(f"Event with ID {event_id} not found in session {session_id}.")
+      sessionFactory.commit()
+
+  @override
+  def remove_events_from_timestamp(
+      self, app_name: str, user_id: str, session_id: str, timestamp: datetime
+  ) -> None:
+    """
+    Remove events from the database starting from a specific timestamp and after.
+
+    Args:
+        app_name: The application name.
+        user_id: The user ID.
+        session_id: The session ID.
+        timestamp: The timestamp from which to remove events (inclusive).
+    """
+    with self.DatabaseSessionFactory() as sessionFactory:
+      stmt = delete(StorageEvent).where(
+          StorageEvent.app_name == app_name,
+          StorageEvent.user_id == user_id,
+          StorageEvent.session_id == session_id,
+          StorageEvent.timestamp >= timestamp,
+      )
+      result = sessionFactory.execute(stmt)
+      if result.rowcount == 0:
+        logger.warning(f"No events found from timestamp {timestamp} in session {session_id}.")
+      sessionFactory.commit()
 
 
 def convert_event(event: StorageEvent) -> Event:
