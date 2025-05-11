@@ -95,6 +95,7 @@ class CallbackContext(ReadonlyContext):
     """
     if self._invocation_context.artifact_service is None:
       raise ValueError("Artifact service is not initialized.")
+
     version = await self._invocation_context.artifact_service.save_artifact(
         app_name=self._invocation_context.app_name,
         user_id=self._invocation_context.user_id,
@@ -104,3 +105,28 @@ class CallbackContext(ReadonlyContext):
     )
     self._event_actions.artifact_delta[filename] = version
     return version
+
+  async def delete_artifact(self, filename: str) -> bool:
+    """Deletes an artifact and records the deletion as delta for the current session.
+
+    Args:
+      filename: The filename of the artifact to delete.
+
+    Returns:
+      True if deletion was successful, False otherwise.
+    """
+    if self._invocation_context.artifact_service is None:
+      raise ValueError("Artifact service is not initialized.")
+
+    success = await self._invocation_context.artifact_service.delete_artifact(
+        app_name=self._invocation_context.app_name,
+        user_id=self._invocation_context.user_id,
+        session_id=self._invocation_context.session.id,
+        filename=filename,
+    )
+    if success:
+      # Mark this artifact as deleted in the delta
+      self._event_actions.artifact_delta[filename] = None
+    return success
+
+
