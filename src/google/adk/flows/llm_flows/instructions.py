@@ -14,7 +14,10 @@
 
 """Handles instructions and global instructions for LLM flow."""
 
+
 from __future__ import annotations
+
+# from loguru import logger
 
 import re
 from typing import AsyncGenerator
@@ -84,13 +87,29 @@ async def _populate_values(
   async def _async_sub(pattern, repl_async_fn, string) -> str:
     result = []
     last_end = 0
+    # logger.debug(f"Replacing in string")
     for match in re.finditer(pattern, string):
+      # logger.warning(f"Found match: {match.group()}")
+
       result.append(string[last_end : match.start()])
       replacement = await repl_async_fn(match)
       result.append(replacement)
       last_end = match.end()
     result.append(string[last_end:])
     return ''.join(result)
+
+  def _resolve_nested_state(state: dict, var_name: str) -> str:
+    """Resolves nested state variables using dot notation."""
+    keys = var_name.split('.')
+    value = state
+
+    for key in keys:
+      if isinstance(value, dict) and key in value:
+        value = value[key]
+        # logger.debug(f"Resolved {var_name} state key: {key} -> {value}")
+      else:
+        raise KeyError(f"Nested context variable not found: `{var_name}`.")
+    return str(value)
 
   async def _replace_match(match) -> str:
     var_name = match.group().lstrip('{').rstrip('}').strip()
@@ -114,37 +133,52 @@ async def _populate_values(
     else:
       if not _is_valid_state_name(var_name):
         return match.group()
-      if var_name in context.session.state:
-        return str(context.session.state[var_name])
-      else:
+      try:
+        return _resolve_nested_state(context.session.state, var_name)
+      except KeyError as e:
         if optional:
           return ''
         else:
-          raise KeyError(f'Context variable not found: `{var_name}`.')
+          raise e
 
+  # logger.debug(f"Populating instruction template: {instruction_template[:20]}")
   return await _async_sub(r'{+[^{}]*}+', _replace_match, instruction_template)
 
 
 def _is_valid_state_name(var_name):
-  """Checks if the variable name is a valid state name.
+    """Checks if the variable name is a valid state name."""
+    parts = var_name.split(':')
+    if len(parts) == 1:
+        # Allow dot-separated names
+        return all(part.isidentifier() for part in var_name.split('.'))
 
-  Valid state is either:
-    - Valid identifier
-    - <Valid prefix>:<Valid identifier>
-  All the others will just return as it is.
+    if len(parts) == 2:
+        prefixes = [State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX]
+        if (parts[0] + ':') in prefixes:
+            return all(part.isidentifier() for part in parts[1].split('.'))
+    return False
 
-  Args:
-    var_name: The variable name to check.
 
-  Returns:
-    True if the variable name is a valid state name, False otherwise.
-  """
-  parts = var_name.split(':')
-  if len(parts) == 1:
-    return var_name.isidentifier()
+# def _is_valid_state_name(var_name):
+#   """Checks if the variable name is a valid state name.
 
-  if len(parts) == 2:
-    prefixes = [State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX]
-    if (parts[0] + ':') in prefixes:
-      return parts[1].isidentifier()
-  return False
+#   Valid state is either:
+#     - Valid identifier
+#     - <Valid prefix>:<Valid identifier>
+#   All the others will just return as it is.
+
+#   Args:
+#     var_name: The variable name to check.
+
+#   Returns:
+#     True if the variable name is a valid state name, False otherwise.
+#   """
+#   parts = var_name.split(':')
+#   if len(parts) == 1:
+#     return var_name.isidentifier()
+
+#   if len(parts) == 2:
+#     prefixes = [State.APP_PREFIX, State.USER_PREFIX, State.TEMP_PREFIX]
+#     if (parts[0] + ':') in prefixes:
+#       return parts[1].isidentifier()
+#   return False

@@ -201,7 +201,7 @@ class Runner:
       invocation_context.agent = self._find_agent_to_run(session, root_agent)
       async for event in invocation_context.agent.run_async(invocation_context):
         if not event.partial:
-          self.session_service.append_event(session=session, event=event)
+          await self.session_service.append_event(session=session, event=event)
         yield event
 
   async def _append_new_message_to_session(
@@ -246,7 +246,7 @@ class Runner:
         author='user',
         content=new_message,
     )
-    self.session_service.append_event(session=session, event=event)
+    await self.session_service.append_event(session=session, event=event)
 
   async def run_live(
       self,
@@ -328,7 +328,7 @@ class Runner:
             )
 
     async for event in invocation_context.agent.run_live(invocation_context):
-      self.session_service.append_event(session=session, event=event)
+      await self.session_service.append_event(session=session, event=event)
       yield event
 
   async def close_session(self, session: Session):
@@ -339,7 +339,7 @@ class Runner:
     """
     if self.memory_service:
       await self.memory_service.add_session_to_memory(session)
-    self.session_service.close_session(session=session)
+    await self.session_service.close_session(session=session)
 
   def _find_agent_to_run(
       self, session: Session, root_agent: BaseAgent
@@ -485,6 +485,8 @@ class InMemoryRunner(Runner):
       agent: The root agent to run.
       app_name: The application name of the runner. Defaults to
         'InMemoryRunner'.
+      _in_memory_session_service: Deprecated. Please don't use. The in-memory
+        session service for the runner.
   """
 
   def __init__(self, agent: LlmAgent, *, app_name: str = 'InMemoryRunner'):
@@ -495,10 +497,11 @@ class InMemoryRunner(Runner):
         app_name: The application name of the runner. Defaults to
           'InMemoryRunner'.
     """
+    self._in_memory_session_service = InMemorySessionService()
     super().__init__(
         app_name=app_name,
         agent=agent,
         artifact_service=InMemoryArtifactService(),
-        session_service=InMemorySessionService(),
+        session_service=self._in_memory_session_service,
         memory_service=InMemoryMemoryService(),
     )
