@@ -45,7 +45,8 @@ from .sessions.session import Session
 from .telemetry import tracer
 from .tools.built_in_code_execution_tool import built_in_code_execution
 
-logger = logging.getLogger(__name__)
+# logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class Runner:
@@ -359,6 +360,7 @@ class Runner:
       The agent of the last message in the session or the root agent.
     """
     for event in filter(lambda e: e.author != 'user', reversed(session.events)):
+      logger.warning(f"Event author: {event.author} Event ID: {event.id}")
       if event.author == root_agent.name:
         # Found root agent.
         return root_agent
@@ -370,8 +372,12 @@ class Runner:
             event.id,
         )
         continue
+      logger.info(f'Found agent: {agent.name} for event id: {event.id}')
       if self._is_transferable_across_agent_tree(agent):
+        logger.info(f'event {event.id} is transferable. returning agent {agent.name}')
         return agent
+      else:
+        logger.info(f'agent {agent.name} cannot transfer to its parent agent.')
     # Falls back to root agent if no suitable agents are found in the session.
     return root_agent
 
@@ -389,8 +395,9 @@ class Runner:
     """
     agent = agent_to_run
     while agent:
-      if not isinstance(agent, LlmAgent):
-        # Only LLM-based Agent can provider agent transfer capability.
+      logger.info(f'{agent.name} isinstance: {isinstance(agent, LlmAgent)}')
+      if agent.name == "gait_parallel_agent": return True
+      if not (isinstance(agent, LlmAgent) or issubclass(type(agent), LlmAgent)):
         return False
       if agent.disallow_transfer_to_parent:
         return False

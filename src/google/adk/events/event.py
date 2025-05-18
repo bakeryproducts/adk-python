@@ -78,6 +78,7 @@ class Event(LlmResponse):
   Branch is used when multiple sub-agent shouldn't see their peer agents'
   conversation history.
   """
+  block_final: Optional[bool] = Field(default=False, alias='final')
 
   # The following are computed fields.
   # Do not assign the ID. It will be assigned by the session.
@@ -101,6 +102,7 @@ class Event(LlmResponse):
         and not self.get_function_responses()
         and not self.partial
         and not self.has_trailing_code_execution_result()
+        and not self.block_final
     )
 
   def get_function_calls(self) -> list[types.FunctionCall]:
