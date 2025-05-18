@@ -238,9 +238,14 @@ def _get_contents(
 
 def _is_other_agent_reply(current_agent_name: str, event: Event) -> bool:
   """Whether the event is a reply from another agent."""
+  author = event.author
+
+  stripped_author = author.lstrip('_')
+  stripped_agent = current_agent_name.lstrip('_')
+  is_equal = stripped_author == stripped_agent
   return bool(
       current_agent_name
-      and event.author != current_agent_name
+      and (event.author != current_agent_name and not is_equal)
       and event.author != 'user'
   )
 
