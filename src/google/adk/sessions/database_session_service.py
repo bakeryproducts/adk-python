@@ -454,6 +454,78 @@ class DatabaseSessionService(BaseSessionService):
         sessions.append(session)
       return ListSessionsResponse(sessions=sessions)
 
+  async def list_sessions_by_prefix(
+      self, *, app_name: str, prefix: str, page: int = 1, page_size: int = 20
+  ) -> ListSessionsResponse:
+    """
+    Lists sessions that have an ID starting with the given prefix.
+    
+    Args:
+        app_name: The application name.
+        prefix: The prefix to filter session IDs by.
+        page: The page number (1-based). Default is 1.
+        page_size: Maximum number of sessions to return per page. Default is 20.
+    
+    Returns:
+        ListSessionsResponse containing sessions with IDs that match the prefix.
+    """
+    if page < 1:
+      raise ValueError("Page number must be at least 1.")
+    
+    if page_size < 1:
+      raise ValueError("Page size must be at least 1.")
+    
+    offset = (page - 1) * page_size
+    
+    with self.database_session_factory() as session_factory:
+      results = (
+          session_factory.query(StorageSession)
+          .filter(StorageSession.app_name == app_name)
+          .filter(StorageSession.id.like(f"{prefix}%"))
+          .order_by(StorageSession.update_time.desc())
+          .offset(offset)
+          .limit(page_size)
+          .all()
+      )
+      
+      # Get total count for pagination information
+      total_count = (
+        session_factory.query(StorageSession)
+        .filter(StorageSession.app_name == app_name)
+        .filter(StorageSession.id.like(f"{prefix}%"))
+        .count()
+      )
+
+      
+      sessions = []
+      for storage_session in results:
+        session = Session(
+            app_name=app_name,
+            user_id=storage_session.user_id,
+            id=storage_session.id,
+            state={},
+            last_update_time=storage_session.update_time.timestamp(),
+        )
+        sessions.append(session)
+
+      from pydantic import BaseModel
+      class ListSessionsResponseWithPagination(BaseModel):
+        sessions: list[Session]
+        total_count: int
+        page: int
+        page_size: int
+        total_pages: int
+
+      response = ListSessionsResponseWithPagination(
+          sessions=sessions,
+          total_count=total_count,
+          page=page,
+          page_size=page_size,
+          total_pages=(total_count + page_size - 1) // page_size
+      )
+      
+      return response
+
   @override
   async def delete_session(
       self, app_name: str, user_id: str, session_id: str
