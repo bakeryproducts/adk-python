@@ -206,13 +206,23 @@ def _get_contents(
         or not event.content.parts
         or event.content.parts[0].text == ''
     ):
+      # print('Skipping event without content or empty text:', event)
       # Skip events without content, or generated neither by user nor by model
       # or has empty text.
       # E.g. events purely for mutating session states.
       continue
     if not _is_event_belongs_to_branch(current_branch, event):
       # Skip events not belong to current branch.
-      continue
+      # print(
+      #     'Skipping event not belong to current branch:',
+      #     current_branch,
+      #     event.branch,
+      #     event.author,
+      # )
+      if not (event.branch == 'gait_parallel_agent._coordinator_agent' and \
+              current_branch == 'gait_parallel_agent._plan_agent'):
+        continue
+
     if _is_auth_event(event):
       # skip auth event
       continue
