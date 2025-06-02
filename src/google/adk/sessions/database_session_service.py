@@ -454,6 +454,51 @@ class DatabaseSessionService(BaseSessionService):
         sessions.append(session)
       return ListSessionsResponse(sessions=sessions)
 
+  @override
+  async def _filter_sessions(self, *, app_name: str) -> ListSessionsResponse:
+    with self.database_session_factory() as session_factory:
+      results = (
+          session_factory.query(StorageSession)
+          .filter(StorageSession.app_name == app_name)
+          .all()
+      )
+      sessions = []
+      for storage_session in results:
+        # Fetch event timestamps for this session
+        event_timestamps = (
+            session_factory.query(StorageEvent.timestamp, StorageEvent.author)
+            .filter(StorageEvent.app_name == app_name)
+            .filter(StorageEvent.user_id == storage_session.user_id)
+            .filter(StorageEvent.session_id == storage_session.id)
+            .order_by(StorageEvent.timestamp.asc())
+            .all()
+        )
+        
+        # Create lightweight events with timestamps for duration calculations
+        lightweight_events = []
+        for timestamp, author in event_timestamps:
+          # Create minimal event objects with just timestamp and author
+          lightweight_event = Event(
+              id="placeholder",
+              author=author,
+              timestamp=timestamp.timestamp(),
+              content=None,  # Minimal content to save memory
+          )
+          lightweight_events.append(lightweight_event)
+        
+        session = Session(
+            app_name=app_name,
+            user_id=storage_session.user_id,
+            id=storage_session.id,
+            state={},
+            last_update_time=storage_session.update_time.timestamp(),
+        )
+        # Set the events list with timestamp information
+        session.events = lightweight_events
+        sessions.append(session)
+      return ListSessionsResponse(sessions=sessions)
+
+
   async def list_sessions_by_prefix(
       self, *, app_name: str, prefix: str, page: int = 1, page_size: int = 20
   ) -> ListSessionsResponse:
