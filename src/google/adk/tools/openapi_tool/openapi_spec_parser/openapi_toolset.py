@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import json
 import logging
 from typing import Any
@@ -39,8 +41,8 @@ logger = logging.getLogger("google_adk." + __name__)
 class OpenAPIToolset(BaseToolset):
   """Class for parsing OpenAPI spec into a list of RestApiTool.
 
-  Usage:
-  ```
+  Usage::
+
     # Initialize OpenAPI toolset from a spec string.
     openapi_toolset = OpenAPIToolset(spec_str=openapi_spec_str,
       spec_str_type="json")
@@ -55,7 +57,6 @@ class OpenAPIToolset(BaseToolset):
     agent = Agent(
       tools=[openapi_toolset.get_tool('tool_name')]
     )
-  ```
   """
 
   def __init__(
@@ -70,8 +71,8 @@ class OpenAPIToolset(BaseToolset):
   ):
     """Initializes the OpenAPIToolset.
 
-    Usage:
-    ```
+    Usage::
+
       # Initialize OpenAPI toolset from a spec string.
       openapi_toolset = OpenAPIToolset(spec_str=openapi_spec_str,
         spec_str_type="json")
@@ -86,7 +87,6 @@ class OpenAPIToolset(BaseToolset):
       agent = Agent(
         tools=[openapi_toolset.get_tool('tool_name')]
       )
-    ```
 
     Args:
       spec_dict: The OpenAPI spec dictionary. If provided, it will be used
@@ -96,19 +96,19 @@ class OpenAPIToolset(BaseToolset):
       spec_str_type: The type of the OpenAPI spec string. Can be "json" or
         "yaml".
       auth_scheme: The auth scheme to use for all tools. Use AuthScheme or use
-        helpers in `google.adk.tools.openapi_tool.auth.auth_helpers`
+        helpers in ``google.adk.tools.openapi_tool.auth.auth_helpers``
       auth_credential: The auth credential to use for all tools. Use
         AuthCredential or use helpers in
-        `google.adk.tools.openapi_tool.auth.auth_helpers`
+        ``google.adk.tools.openapi_tool.auth.auth_helpers``
       tool_filter: The filter used to filter the tools in the toolset. It can be
         either a tool predicate or a list of tool names of the tools to expose.
     """
+    super().__init__(tool_filter=tool_filter)
     if not spec_dict:
       spec_dict = self._load_spec(spec_str, spec_str_type)
     self._tools: Final[List[RestApiTool]] = list(self._parse(spec_dict))
     if auth_scheme or auth_credential:
       self._configure_auth_all(auth_scheme, auth_credential)
-    self.tool_filter = tool_filter
 
   def _configure_auth_all(
       self, auth_scheme: AuthScheme, auth_credential: AuthCredential
@@ -129,12 +129,7 @@ class OpenAPIToolset(BaseToolset):
     return [
         tool
         for tool in self._tools
-        if self.tool_filter is None
-        or (
-            self.tool_filter(tool, readonly_context)
-            if isinstance(self.tool_filter, ToolPredicate)
-            else tool.name in self.tool_filter
-        )
+        if self._is_tool_selected(tool, readonly_context)
     ]
 
   def get_tool(self, tool_name: str) -> Optional[RestApiTool]:

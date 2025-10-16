@@ -12,15 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime
+from datetime import timezone
 import enum
-import pytest
 
-from google.adk.events import Event
-from google.adk.events import EventActions
-from google.adk.sessions import DatabaseSessionService
-from google.adk.sessions import InMemorySessionService
+from google.adk.events.event import Event
+from google.adk.events.event_actions import EventActions
 from google.adk.sessions.base_session_service import GetSessionConfig
+from google.adk.sessions.database_session_service import DatabaseSessionService
+from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.genai import types
+import pytest
 
 
 class SessionServiceType(enum.Enum):
@@ -66,10 +68,17 @@ async def test_create_get_session(service_type):
   assert session.id
   assert session.state == state
   assert (
-      await session_service.get_session(
-          app_name=app_name, user_id=user_id, session_id=session.id
-      )
-      == session
+      session.last_update_time
+      <= datetime.now().astimezone(timezone.utc).timestamp()
+  )
+
+  got_session = await session_service.get_session(
+      app_name=app_name, user_id=user_id, session_id=session.id
+  )
+  assert got_session == session
+  assert (
+      got_session.last_update_time
+      <= datetime.now().astimezone(timezone.utc).timestamp()
   )
 
   session_id = session.id
@@ -97,15 +106,80 @@ async def test_create_and_list_sessions(service_type):
   session_ids = ['session' + str(i) for i in range(5)]
   for session_id in session_ids:
     await session_service.create_session(
-        app_name=app_name, user_id=user_id, session_id=session_id
+        app_name=app_name,
+        user_id=user_id,
+        session_id=session_id,
+        state={'key': 'value' + session_id},
     )
 
   list_sessions_response = await session_service.list_sessions(
       app_name=app_name, user_id=user_id
   )
   sessions = list_sessions_response.sessions
-  for i in range(len(sessions)):
-    assert sessions[i].id == session_ids[i]
+  assert len(sessions) == len(session_ids)
+  assert {s.id for s in sessions} == set(session_ids)
+  for session in sessions:
+    assert session.state == {'key': 'value' + session.id}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
+)
+async def test_list_sessions_all_users(service_type):
+  session_service = get_session_service(service_type)
+  app_name = 'my_app'
+  user_id_1 = 'user1'
+  user_id_2 = 'user2'
+
+  await session_service.create_session(
+      app_name=app_name,
+      user_id=user_id_1,
+      session_id='session1a',
+      state={'key': 'value1a'},
+  )
+  await session_service.create_session(
+      app_name=app_name,
+      user_id=user_id_1,
+      session_id='session1b',
+      state={'key': 'value1b'},
+  )
+  await session_service.create_session(
+      app_name=app_name,
+      user_id=user_id_2,
+      session_id='session2a',
+      state={'key': 'value2a'},
+  )
+
+  # List sessions for user1
+  list_sessions_response_1 = await session_service.list_sessions(
+      app_name=app_name, user_id=user_id_1
+  )
+  sessions_1 = list_sessions_response_1.sessions
+  assert len(sessions_1) == 2
+  assert {s.id for s in sessions_1} == {'session1a', 'session1b'}
+  for session in sessions_1:
+    if session.id == 'session1a':
+      assert session.state == {'key': 'value1a'}
+    else:
+      assert session.state == {'key': 'value1b'}
+
+  # List sessions for user2
+  list_sessions_response_2 = await session_service.list_sessions(
+      app_name=app_name, user_id=user_id_2
+  )
+  sessions_2 = list_sessions_response_2.sessions
+  assert len(sessions_2) == 1
+  assert sessions_2[0].id == 'session2a'
+  assert sessions_2[0].state == {'key': 'value2a'}
+
+  # List sessions for all users
+  list_sessions_response_all = await session_service.list_sessions(
+      app_name=app_name, user_id=None
+  )
+  sessions_all = list_sessions_response_all.sessions
+  assert len(sessions_all) == 3
+  assert {s.id for s in sessions_all} == {'session1a', 'session1b', 'session2a'}
 
 
 @pytest.mark.asyncio
@@ -117,6 +191,7 @@ async def test_session_state(service_type):
   app_name = 'my_app'
   user_id_1 = 'user1'
   user_id_2 = 'user2'
+  user_id_malicious = 'malicious'
   session_id_11 = 'session11'
   session_id_12 = 'session12'
   session_id_2 = 'session2'
@@ -137,6 +212,10 @@ async def test_session_state(service_type):
   )
   await session_service.create_session(
       app_name=app_name, user_id=user_id_2, session_id=session_id_2
+  )
+
+  await session_service.create_session(
+      app_name=app_name, user_id=user_id_malicious, session_id=session_id_11
   )
 
   assert session_11.state.get('key11') == 'value11'
@@ -186,6 +265,13 @@ async def test_session_state(service_type):
   assert session_11.state.get('key11') == 'value11_new'
   assert session_11.state.get('user:key1') == 'value1'
   assert not session_11.state.get('temp:key')
+
+  # Make sure a malicious user cannot obtain a session and events not belonging to them
+  session_mismatch = await session_service.get_session(
+      app_name=app_name, user_id=user_id_malicious, session_id=session_id_11
+  )
+
+  assert len(session_mismatch.events) == 0
 
 
 @pytest.mark.asyncio
@@ -246,32 +332,33 @@ async def test_append_event_bytes(service_type):
   session = await session_service.create_session(
       app_name=app_name, user_id=user_id
   )
+
+  test_content = types.Content(
+      role='user',
+      parts=[
+          types.Part.from_bytes(data=b'test_image_data', mime_type='image/png'),
+      ],
+  )
+  test_grounding_metadata = types.GroundingMetadata(
+      search_entry_point=types.SearchEntryPoint(sdk_blob=b'test_sdk_blob')
+  )
   event = Event(
       invocation_id='invocation',
       author='user',
-      content=types.Content(
-          role='user',
-          parts=[
-              types.Part.from_bytes(
-                  data=b'test_image_data', mime_type='image/png'
-              ),
-          ],
-      ),
+      content=test_content,
+      grounding_metadata=test_grounding_metadata,
   )
   await session_service.append_event(session=session, event=event)
 
-  assert session.events[0].content.parts[0] == types.Part.from_bytes(
-      data=b'test_image_data', mime_type='image/png'
-  )
+  assert session.events[0].content == test_content
 
   session = await session_service.get_session(
       app_name=app_name, user_id=user_id, session_id=session.id
   )
   events = session.events
   assert len(events) == 1
-  assert events[0].content.parts[0] == types.Part.from_bytes(
-      data=b'test_image_data', mime_type='image/png'
-  )
+  assert events[0].content == test_content
+  assert events[0].grounding_metadata == test_grounding_metadata
 
 
 @pytest.mark.asyncio
@@ -315,7 +402,9 @@ async def test_append_event_complete(service_type):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('service_type', [SessionServiceType.IN_MEMORY])
+@pytest.mark.parametrize(
+    'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
+)
 async def test_get_session_with_config(service_type):
   session_service = get_session_service(service_type)
   app_name = 'my_app'
@@ -374,3 +463,78 @@ async def test_get_session_with_config(service_type):
   )
   events = session.events
   assert len(events) == num_test_events - after_timestamp + 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
+)
+async def test_append_event_with_fields(service_type):
+  session_service = get_session_service(service_type)
+  app_name = 'my_app'
+  user_id = 'test_user'
+  session = await session_service.create_session(
+      app_name=app_name, user_id=user_id, state={}
+  )
+
+  event = Event(
+      invocation_id='invocation',
+      author='user',
+      content=types.Content(role='user', parts=[types.Part(text='text')]),
+      long_running_tool_ids={'tool1', 'tool2'},
+      partial=False,
+      turn_complete=True,
+      error_code='ERROR_CODE',
+      error_message='error message',
+      interrupted=True,
+      grounding_metadata=types.GroundingMetadata(
+          web_search_queries=['query1'],
+      ),
+      custom_metadata={'custom_key': 'custom_value'},
+  )
+  await session_service.append_event(session, event)
+
+  retrieved_session = await session_service.get_session(
+      app_name=app_name, user_id=user_id, session_id=session.id
+  )
+  assert retrieved_session
+  assert len(retrieved_session.events) == 1
+  retrieved_event = retrieved_session.events[0]
+
+  assert retrieved_event == event
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'service_type', [SessionServiceType.IN_MEMORY, SessionServiceType.DATABASE]
+)
+async def test_append_event_should_trim_temp_delta_state(service_type):
+  session_service = get_session_service(service_type)
+  app_name = 'my_app'
+  user_id = 'user'
+
+  session = await session_service.create_session(
+      app_name=app_name, user_id=user_id
+  )
+
+  event = Event(
+      invocation_id='invocation',
+      author='user',
+      content=types.Content(role='user', parts=[types.Part(text='text')]),
+      actions=EventActions(
+          state_delta={
+              'app:key': 'app_value',
+              'temp:key': 'temp_value',
+          }
+      ),
+  )
+
+  await session_service.append_event(session, event)
+
+  updated_session = await session_service.get_session(
+      app_name=app_name, user_id=user_id, session_id=session.id
+  )
+
+  last_event = updated_session.events[-1]
+  assert 'temp:key' not in last_event.actions.state_delta
+  assert last_event.actions.state_delta['app:key'] == 'app_value'

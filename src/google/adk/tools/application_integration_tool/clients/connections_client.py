@@ -12,9 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import json
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Tuple
 
 import google.auth
 from google.auth import default as default_service_credential
@@ -247,6 +253,12 @@ class ConnectionsClient:
                     "description": (
                         "Timeout in seconds for execution of custom query"
                     ),
+                },
+                "sortByColumns": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "default": [],
+                    "description": "Column to sort the results by",
                 },
                 "connectorOutputPayload": {"type": "object"},
                 "nextPageToken": {"type": "string"},
@@ -661,6 +673,7 @@ class ConnectionsClient:
             "serviceName": {"$ref": "#/components/schemas/serviceName"},
             "host": {"$ref": "#/components/schemas/host"},
             "entity": {"$ref": "#/components/schemas/entity"},
+            "sortByColumns": {"$ref": "#/components/schemas/sortByColumns"},
             "dynamicAuthConfig": {
                 "$ref": "#/components/schemas/dynamicAuthConfig"
             },
@@ -728,6 +741,9 @@ class ConnectionsClient:
             "query": {"$ref": "#/components/schemas/query"},
             "timeout": {"$ref": "#/components/schemas/timeout"},
             "pageSize": {"$ref": "#/components/schemas/pageSize"},
+            "dynamicAuthConfig": {
+                "$ref": "#/components/schemas/dynamicAuthConfig"
+            },
         },
     }
 
@@ -796,7 +812,9 @@ class ConnectionsClient:
       )
     else:
       try:
-        credentials, _ = default_service_credential()
+        credentials, _ = default_service_credential(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
       except:
         credentials = None
 

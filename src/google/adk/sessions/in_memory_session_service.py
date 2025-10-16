@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from __future__ import annotations
 
 import copy
 import logging
@@ -32,7 +33,11 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 
 class InMemorySessionService(BaseSessionService):
-  """An in-memory implementation of the session service."""
+  """An in-memory implementation of the session service.
+
+  It is not suitable for multi-threaded production environments. Use it for
+  testing and development only.
+  """
 
   def __init__(self):
     # A map from app name to a map from user ID to a map from session ID to
@@ -196,33 +201,44 @@ class InMemorySessionService(BaseSessionService):
 
   @override
   async def list_sessions(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: Optional[str] = None
   ) -> ListSessionsResponse:
     return self._list_sessions_impl(app_name=app_name, user_id=user_id)
 
   def list_sessions_sync(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: Optional[str] = None
   ) -> ListSessionsResponse:
     logger.warning('Deprecated. Please migrate to the async method.')
     return self._list_sessions_impl(app_name=app_name, user_id=user_id)
 
   def _list_sessions_impl(
-      self, *, app_name: str, user_id: str
+      self, *, app_name: str, user_id: Optional[str] = None
   ) -> ListSessionsResponse:
     empty_response = ListSessionsResponse()
     if app_name not in self.sessions:
       return empty_response
-    if user_id not in self.sessions[app_name]:
+    if user_id is not None and user_id not in self.sessions[app_name]:
       return empty_response
 
     sessions_without_events = []
-    for session in self.sessions[app_name][user_id].values():
-      copied_session = copy.deepcopy(session)
-      copied_session.events = []
-      copied_session.state = {}
-      sessions_without_events.append(copied_session)
+
+    if user_id is None:
+      for user_id in self.sessions[app_name]:
+        for session_id in self.sessions[app_name][user_id]:
+          session = self.sessions[app_name][user_id][session_id]
+          copied_session = copy.deepcopy(session)
+          copied_session.events = []
+          copied_session = self._merge_state(app_name, user_id, copied_session)
+          sessions_without_events.append(copied_session)
+    else:
+      for session in self.sessions[app_name][user_id].values():
+        copied_session = copy.deepcopy(session)
+        copied_session.events = []
+        copied_session = self._merge_state(app_name, user_id, copied_session)
+        sessions_without_events.append(copied_session)
     return ListSessionsResponse(sessions=sessions_without_events)
 
+  @override
   async def delete_session(
       self, *, app_name: str, user_id: str, session_id: str
   ) -> None:
@@ -247,7 +263,7 @@ class InMemorySessionService(BaseSessionService):
         )
         is None
     ):
-      return None
+      return
 
     self.sessions[app_name][user_id].pop(session_id)
 
@@ -261,11 +277,20 @@ class InMemorySessionService(BaseSessionService):
     app_name = session.app_name
     user_id = session.user_id
     session_id = session.id
+
+    def _warning(message: str) -> None:
+      logger.warning(
+          f'Failed to append event to session {session_id}: {message}'
+      )
+
     if app_name not in self.sessions:
+      _warning(f'app_name {app_name} not in sessions')
       return event
     if user_id not in self.sessions[app_name]:
+      _warning(f'user_id {user_id} not in sessions[app_name]')
       return event
     if session_id not in self.sessions[app_name][user_id]:
+      _warning(f'session_id {session_id} not in sessions[app_name][user_id]')
       return event
 
     if event.actions and event.actions.state_delta:

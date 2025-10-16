@@ -14,7 +14,9 @@
 
 import base64
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
 from google.adk.tools.apihub_tool.clients.apihub_client import APIHubClient
 import pytest
 from requests.exceptions import HTTPError
@@ -295,6 +297,10 @@ class TestAPIHubClient:
     client = APIHubClient()
     token = client._get_access_token()
     assert token == "default_token"
+    # Verify default_service_credential is called with the correct scopes parameter
+    mock_default_service_credential.assert_called_once_with(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
     mock_credential.refresh.assert_called_once()
     assert client.credential_cache == mock_credential
 
@@ -464,9 +470,7 @@ class TestAPIHubClient:
         MagicMock(
             status_code=200,
             json=lambda: {
-                "name": (
-                    "projects/test-project/locations/us-central1/apis/api1/versions/v1"
-                ),
+                "name": "projects/test-project/locations/us-central1/apis/api1/versions/v1",
                 "specs": [],
             },
         ),  # No specs

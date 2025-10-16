@@ -12,18 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import inspect
 from textwrap import dedent
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+from typing import Dict
+from typing import List
+from typing import Optional
+from typing import Union
 
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
 from fastapi.openapi.models import Schema
 
+from ..._gemini_schema_util import _to_snake_case
 from ..common.common import ApiParameter
 from ..common.common import PydocHelper
-from ..common.common import to_snake_case
 
 
 class OperationParser:
@@ -158,8 +164,8 @@ class OperationParser:
   def _process_return_value(self) -> Parameter:
     """Returns a Parameter object representing the return type."""
     responses = self._operation.responses or {}
-    # Default to Any if no 2xx response or if schema is missing
-    return_schema = Schema(type='Any')
+    # Default to empty schema if no 2xx response or if schema is missing
+    return_schema = Schema()
 
     # Take the 20x response with the smallest response code.
     valid_codes = list(
@@ -185,7 +191,7 @@ class OperationParser:
     operation_id = self._operation.operationId
     if not operation_id:
       raise ValueError('Operation ID is missing')
-    return to_snake_case(operation_id)[:60]
+    return _to_snake_case(operation_id)[:60]
 
   def get_return_type_hint(self) -> str:
     """Returns the return type hint string (like 'str', 'int', etc.)."""

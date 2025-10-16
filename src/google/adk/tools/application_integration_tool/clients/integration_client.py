@@ -12,8 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
+
 import json
-from typing import List, Optional
+from typing import List
+from typing import Optional
+
 from google.adk.tools.application_integration_tool.clients.connections_client import ConnectionsClient
 import google.auth
 from google.auth import default as default_service_credential
@@ -239,7 +243,9 @@ class IntegrationClient:
       )
     else:
       try:
-        credentials, _ = default_service_credential()
+        credentials, _ = default_service_credential(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
       except:
         credentials = None
 
