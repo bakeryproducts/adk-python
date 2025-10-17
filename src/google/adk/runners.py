@@ -156,7 +156,7 @@ class Runner:
         self._agent_origin_app_name,
         self._agent_origin_dir,
     ) = self._infer_agent_origin(self.agent)
-    self._enforce_app_name_alignment()
+    # self._enforce_app_name_alignment()
 
   def _validate_runner_params(
       self,

@@ -536,7 +536,7 @@ class DatabaseSessionService(BaseSessionService):
           .all()
       )
       # from oldest to newest:
-      storage_events.reverse()
+      # storage_events.reverse()
 
       # Fetch states from storage
       storage_app_state = sql_session.get(StorageAppState, (app_name))
