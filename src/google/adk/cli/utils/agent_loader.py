@@ -37,7 +37,7 @@ logger = logging.getLogger("google_adk." + __name__)
 
 # Special agents directory for agents with names starting with double underscore
 SPECIAL_AGENTS_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "built_in_agents"
+    os.path.dirname(__file__), "..", "built_in_agents"
 )
 
 
@@ -95,7 +95,7 @@ class AgentLoader(BaseAgentLoader):
       if e.name == agent_name:
         logger.debug("Module %s itself not found.", agent_name)
       else:
-        # it's the case the module imported by {agent_name}.agent module is not
+        # the module imported by {agent_name}.agent module is not
         # found
         e.msg = f"Fail to load '{agent_name}' module. " + e.msg
         raise e
@@ -142,8 +142,7 @@ class AgentLoader(BaseAgentLoader):
       if e.name == f"{agent_name}.agent" or e.name == agent_name:
         logger.debug("Module %s.agent not found.", agent_name)
       else:
-        # it's the case the module imported by {agent_name}.agent module is not
-        # found
+        # the module imported by {agent_name}.agent module is not found
         e.msg = f"Fail to load '{agent_name}.agent' module. " + e.msg
         raise e
     except Exception as e:
@@ -193,10 +192,30 @@ class AgentLoader(BaseAgentLoader):
       agents_dir = os.path.abspath(SPECIAL_AGENTS_DIR)
       # Remove the double underscore prefix for the actual agent name
       actual_agent_name = agent_name[2:]
+      # If this special agents directory is part of a package (has __init__.py
+      # up the tree), build a fully-qualified module path so the built-in agent
+      # can continue to use relative imports. Otherwise, fall back to importing
+      # by module name relative to agents_dir.
+      module_base_name = actual_agent_name
+      package_parts: list[str] = []
+      package_root: Optional[Path] = None
+      current_dir = Path(agents_dir).resolve()
+      while True:
+        if not (current_dir / "__init__.py").is_file():
+          package_root = current_dir
+          break
+        package_parts.append(current_dir.name)
+        current_dir = current_dir.parent
+      if package_parts:
+        package_parts.reverse()
+        module_base_name = ".".join(package_parts + [actual_agent_name])
+        if str(package_root) not in sys.path:
+          sys.path.insert(0, str(package_root))
     else:
       # Regular agent: use the configured agents directory
       agents_dir = self.agents_dir
       actual_agent_name = agent_name
+      module_base_name = actual_agent_name
 
     # Add agents_dir to sys.path
     if agents_dir not in sys.path:
@@ -205,20 +224,20 @@ class AgentLoader(BaseAgentLoader):
     logger.debug("Loading .env for agent %s from %s", agent_name, agents_dir)
     envs.load_dotenv_for_agent(actual_agent_name, str(agents_dir))
 
-    if root_agent := self._load_from_module_or_package(actual_agent_name):
+    if root_agent := self._load_from_module_or_package(module_base_name):
       self._record_origin_metadata(
           loaded=root_agent,
-          expected_app_name=actual_agent_name,
-          module_name=actual_agent_name,
+          expected_app_name=agent_name,
+          module_name=module_base_name,
           agents_dir=agents_dir,
       )
       return root_agent
 
-    if root_agent := self._load_from_submodule(actual_agent_name):
+    if root_agent := self._load_from_submodule(module_base_name):
       self._record_origin_metadata(
           loaded=root_agent,
-          expected_app_name=actual_agent_name,
-          module_name=f"{actual_agent_name}.agent",
+          expected_app_name=agent_name,
+          module_name=f"{module_base_name}.agent",
           agents_dir=agents_dir,
       )
       return root_agent
