@@ -933,11 +933,7 @@ class Runner:
         return root_agent
       if not (agent := root_agent.find_sub_agent(event.author)):
         # Agent not found, continue looking.
-        logger.warning(
-            'Event from an unknown agent: %s, event id: %s',
-            event.author,
-            event.id,
-        )
+        logger.warning( f'Event from an unknown agent: {event.author}, event id: {event.id}',)
         continue
       logger.info(f'Found agent: {agent.name} for event id: {event.id}')
       if self._is_transferable_across_agent_tree(agent):

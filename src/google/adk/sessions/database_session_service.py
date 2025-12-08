@@ -659,25 +659,58 @@ class DatabaseSessionService(BaseSessionService):
       return ListSessionsResponse(sessions=sessions)
 
   @override
-  async def _filter_sessions(self, *, app_name: str) -> ListSessionsResponse:
-    with self.database_session_factory() as session_factory:
-      results = (
-          session_factory.query(StorageSession)
-          .filter(StorageSession.app_name == app_name)
-          .all()
-      )
+  async def _filter_sessions(
+      self,
+      *,
+      app_name: str,
+      start_timestamp: Optional[float] = None,
+      end_timestamp: Optional[float] = None,
+      min_events: int = 0,
+  ) -> ListSessionsResponse:
+    """Filter sessions by date range and minimum event count.
+    
+    Args:
+        app_name: The application name.
+        start_timestamp: Optional start timestamp (inclusive) to filter sessions.
+        end_timestamp: Optional end timestamp (inclusive) to filter sessions.
+        min_events: Minimum number of events required per session (default 0).
+    
+    Returns:
+        ListSessionsResponse containing filtered sessions with lightweight events.
+    """
+    await self._ensure_tables_created()
+    async with self.database_session_factory() as sql_session:
+      # Query sessions for the app with optional date filtering
+      stmt = select(StorageSession).filter(StorageSession.app_name == app_name)
+      
+      # Filter by date range on update_time
+      if start_timestamp is not None:
+        start_dt = datetime.fromtimestamp(start_timestamp)
+        stmt = stmt.filter(StorageSession.update_time >= start_dt)
+      if end_timestamp is not None:
+        end_dt = datetime.fromtimestamp(end_timestamp)
+        stmt = stmt.filter(StorageSession.update_time <= end_dt)
+      
+      result = await sql_session.execute(stmt)
+      results = result.scalars().all()
+
       sessions = []
       for storage_session in results:
         # Fetch event timestamps for this session
-        event_timestamps = (
-            session_factory.query(StorageEvent.timestamp, StorageEvent.author)
+        event_stmt = (
+            select(StorageEvent.timestamp, StorageEvent.author)
             .filter(StorageEvent.app_name == app_name)
             .filter(StorageEvent.user_id == storage_session.user_id)
             .filter(StorageEvent.session_id == storage_session.id)
             .order_by(StorageEvent.timestamp.asc())
-            .all()
         )
-        
+        event_result = await sql_session.execute(event_stmt)
+        event_timestamps = event_result.all()
+
+        # Skip sessions that don't meet minimum event count
+        if len(event_timestamps) < min_events:
+          continue
+
         # Create lightweight events with timestamps for duration calculations
         lightweight_events = []
         for timestamp, author in event_timestamps:
@@ -689,7 +722,7 @@ class DatabaseSessionService(BaseSessionService):
               content=None,  # Minimal content to save memory
           )
           lightweight_events.append(lightweight_event)
-        
+
         session = Session(
             app_name=app_name,
             user_id=storage_session.user_id,
