@@ -26,6 +26,9 @@ from .session import Session
 from .state import State
 
 
+DEFAULT_RECENT_EVENT_LIMIT = 200
+
+
 class GetSessionConfig(BaseModel):
   """The configuration of getting a session."""
 
@@ -80,6 +83,30 @@ class BaseSessionService(abc.ABC):
       config: Optional[GetSessionConfig] = None,
   ) -> Optional[Session]:
     """Gets a session."""
+
+  async def get_session_limited(
+      self,
+      *,
+      app_name: str,
+      user_id: str,
+      session_id: str,
+      num_recent_events: Optional[int] = DEFAULT_RECENT_EVENT_LIMIT,
+      after_timestamp: Optional[float] = None,
+  ) -> Optional[Session]:
+    """Gets a session while capping events by default."""
+    if num_recent_events is not None and num_recent_events <= 0:
+      raise ValueError('num_recent_events must be positive when provided.')
+
+    config = GetSessionConfig(
+        num_recent_events=num_recent_events,
+        after_timestamp=after_timestamp,
+    )
+    return await self.get_session(
+        app_name=app_name,
+        user_id=user_id,
+        session_id=session_id,
+        config=config,
+    )
 
   @abc.abstractmethod
   async def list_sessions(
