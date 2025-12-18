@@ -86,7 +86,6 @@ class BaseSessionService(abc.ABC):
 
   async def get_session_limited(
       self,
-      *,
       app_name: str,
       user_id: str,
       session_id: str,
