@@ -131,12 +131,18 @@ def _get_transfer_targets(agent: LlmAgent) -> list[BaseAgent]:
   from ...agents.llm_agent import LlmAgent
 
   result = []
-  result.extend(agent.sub_agents)
+  result.extend([
+      sub for sub in agent.sub_agents
+      if not getattr(sub, 'disallow_incoming_transfers', False)
+  ])
 
   if not agent.parent_agent or not isinstance(agent.parent_agent, LlmAgent):
     return result
 
-  if not agent.disallow_transfer_to_parent:
+  if (
+      not agent.disallow_transfer_to_parent
+      and not getattr(agent.parent_agent, 'disallow_incoming_transfers', False)
+  ):
     result.append(agent.parent_agent)
 
   if not agent.disallow_transfer_to_peers:
@@ -144,6 +150,7 @@ def _get_transfer_targets(agent: LlmAgent) -> list[BaseAgent]:
         peer_agent
         for peer_agent in agent.parent_agent.sub_agents
         if peer_agent.name != agent.name
+        and not getattr(peer_agent, 'disallow_incoming_transfers', False)
     ])
 
   return result

@@ -294,6 +294,8 @@ class LlmAgent(BaseAgent):
   """
   disallow_transfer_to_peers: bool = False
   """Disallows LLM-controlled transferring to the peer agents."""
+  disallow_incoming_transfers: bool = False
+  """Disallows other agents from transferring to this agent."""
   # LLM-based agent transfer configs - End
 
   include_contents: Literal['default', 'none'] = 'default'
