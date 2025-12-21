@@ -32,6 +32,9 @@ from .functions import REQUEST_EUC_FUNCTION_CALL_NAME
 
 logger = logging.getLogger('google_adk.' + __name__)
 
+from pydantic import Field
+class TimestampedContent(types.Content):
+  timestamp: Optional[float] = Field(default=None, exclude=True)
 
 class _ContentLlmRequestProcessor(BaseLlmRequestProcessor):
   """Builds the contents for the LLM request."""
@@ -443,6 +446,7 @@ def _get_contents(
   for event in result_events:
     content = copy.deepcopy(event.content)
     if content:
+      content = TimestampedContent( **content.model_dump(exclude_none=True), timestamp=event.timestamp,)
       remove_client_function_call_id(content)
       contents.append(content)
   return contents
