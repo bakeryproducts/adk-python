@@ -35,6 +35,7 @@ logger = logging.getLogger('google_adk.' + __name__)
 from pydantic import Field
 class TimestampedContent(types.Content):
   timestamp: Optional[float] = Field(default=None, exclude=True)
+  author: Optional[str] = Field(default=None, exclude=True)
 
 class _ContentLlmRequestProcessor(BaseLlmRequestProcessor):
   """Builds the contents for the LLM request."""
@@ -427,8 +428,13 @@ def _get_contents(
         )
         accumulated_output_transcription = ''
 
+    _content = copy.deepcopy(event.content)
+    event.content = TimestampedContent( **_content.model_dump(exclude_none=True), timestamp=event.timestamp, author=event.author)
+
     if _is_other_agent_reply(agent_name, event):
       if converted_event := _present_other_agent_message(event):
+        _content = copy.deepcopy(converted_event.content)
+        converted_event.content = TimestampedContent( **_content.model_dump(exclude_none=True), timestamp=event.timestamp, author=event.author)
         filtered_events.append(converted_event)
     else:
       filtered_events.append(event)
@@ -446,7 +452,7 @@ def _get_contents(
   for event in result_events:
     content = copy.deepcopy(event.content)
     if content:
-      content = TimestampedContent( **content.model_dump(exclude_none=True), timestamp=event.timestamp,)
+      # content = TimestampedContent( **content.model_dump(exclude_none=True), timestamp=event.timestamp, author=event.author)
       remove_client_function_call_id(content)
       contents.append(content)
   return contents

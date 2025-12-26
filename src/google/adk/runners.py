@@ -1046,18 +1046,18 @@ class Runner:
         return root_agent
       if not (agent := root_agent.find_sub_agent(event.author)):
         # Agent not found, continue looking.
-        logger.warning( f'Event from an unknown agent: {event.author}, event id: {event.id}',)
+        logger.info( f'Event from an unknown agent: {event.author}, event id: {event.id}',)
         continue
       
       if getattr(agent, 'disallow_incoming_transfers', False):
         continue
 
-      logger.info(f'Found agent: {agent.name} for event id: {event.id}')
+      # logger.info(f'Found agent: {agent.name} for event id: {event.id}')
       if self._is_transferable_across_agent_tree(agent):
-        logger.info(f'event {event.id} is transferable. returning agent {agent.name}')
+        # logger.info(f'event {event.id} is transferable. returning agent {agent.name}')
         return agent
-      else:
-        logger.info(f'agent {agent.name} cannot transfer to its parent agent.')
+      # else:
+        # logger.info(f'agent {agent.name} cannot transfer to its parent agent.')
     # Falls back to root agent if no suitable agents are found in the session.
     return root_agent
 
@@ -1075,8 +1075,8 @@ class Runner:
     """
     agent = agent_to_run
     while agent:
-      logger.info(f'{agent.name} isinstance: {isinstance(agent, LlmAgent)}')
-      if agent.name == "gait_parallel_agent": return True
+      # logger.info(f'{agent.name} isinstance: {isinstance(agent, LlmAgent)}')
+      # if agent.name == "gait_parallel_agent": return True
       # if not (isinstance(agent, LlmAgent) or issubclass(type(agent), LlmAgent)):
       if not isinstance(agent, LlmAgent):
         return False

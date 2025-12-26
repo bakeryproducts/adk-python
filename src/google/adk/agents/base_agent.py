@@ -474,7 +474,10 @@ class BaseAgent(BaseModel):
           actions=callback_context._event_actions,
       )
       ctx.end_invocation = True
-      return ret_event
+      # return ret_event
+      # i dont use before agent callbacks and want to be able to skip agent with it
+      # WITHOUT any event content in the session history
+      return None
 
     if callback_context.state.has_delta():
       return Event(
