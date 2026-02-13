@@ -40,9 +40,7 @@ class _AgentTransferLlmRequestProcessor(BaseLlmRequestProcessor):
   async def run_async(
       self, invocation_context: InvocationContext, llm_request: LlmRequest
   ) -> AsyncGenerator[Event, None]:
-    from ...agents.llm_agent import LlmAgent
-
-    if not isinstance(invocation_context.agent, LlmAgent):
+    if not hasattr(invocation_context.agent, 'disallow_transfer_to_parent'):
       return
 
     transfer_targets = _get_transfer_targets(invocation_context.agent)
@@ -141,15 +139,15 @@ If neither you nor the other agents are best for the question, transfer to your 
 
 
 def _get_transfer_targets(agent: LlmAgent) -> list[BaseAgent]:
-  from ...agents.llm_agent import LlmAgent
-
   result = []
   result.extend([
       sub for sub in agent.sub_agents
       if not getattr(sub, 'disallow_incoming_transfers', False)
   ])
 
-  if not agent.parent_agent or not isinstance(agent.parent_agent, LlmAgent):
+  if not agent.parent_agent or not hasattr(
+      agent.parent_agent, 'disallow_transfer_to_parent'
+  ):
     return result
 
   if (

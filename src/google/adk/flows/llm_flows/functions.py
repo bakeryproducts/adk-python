@@ -570,19 +570,16 @@ async def _execute_single_function_call_async(
     return function_response_event
 
   with tracer.start_as_current_span(f'execute_tool {tool.name}'):
+    function_response_event = None
     try:
       function_response_event = await _run_with_trace()
+      return function_response_event
+    finally:
       trace_tool_call(
           tool=tool,
           args=function_args,
           function_response_event=function_response_event,
       )
-      return function_response_event
-    except:
-      trace_tool_call(
-          tool=tool, args=function_args, function_response_event=None
-      )
-      raise
 
 
 async def handle_function_calls_live(
@@ -720,19 +717,16 @@ async def _execute_single_function_call_live(
     return function_response_event
 
   with tracer.start_as_current_span(f'execute_tool {tool.name}'):
+    function_response_event = None
     try:
       function_response_event = await _run_with_trace()
+      return function_response_event
+    finally:
       trace_tool_call(
           tool=tool,
           args=function_args,
           function_response_event=function_response_event,
       )
-      return function_response_event
-    except:
-      trace_tool_call(
-          tool=tool, args=function_args, function_response_event=None
-      )
-      raise
 
 
 async def _process_function_live_helper(
@@ -790,6 +784,9 @@ async def _process_function_live_helper(
               and function_name in invocation_context.active_streaming_tools
           ):
             invocation_context.active_streaming_tools[function_name].task = None
+            invocation_context.active_streaming_tools[function_name].stream = (
+                None
+            )
 
         function_response = {
             'status': f'Successfully stopped streaming function {function_name}'
@@ -828,17 +825,21 @@ async def _process_function_live_helper(
         run_tool_and_update_queue(tool, function_args, tool_context)
     )
 
-    # Register streaming tool using original logic
     async with streaming_lock:
+
       if invocation_context.active_streaming_tools is None:
         invocation_context.active_streaming_tools = {}
-
       if tool.name in invocation_context.active_streaming_tools:
         invocation_context.active_streaming_tools[tool.name].task = task
       else:
+        # Register the streaming tool lazily when the model calls it.
+        # For input-streaming tools (those with `input_stream:
+        # LiveRequestQueue`), _call_live will set .stream to a new
+        # LiveRequestQueue so _send_to_model starts duplicating data.
         invocation_context.active_streaming_tools[tool.name] = (
             ActiveStreamingTool(task=task)
         )
+        logger.debug('Lazily registered streaming tool: %s', tool.name)
 
     # Immediately return a pending response.
     # This is required by current live model.
