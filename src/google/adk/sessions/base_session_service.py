@@ -111,6 +111,17 @@ class BaseSessionService(abc.ABC):
   ) -> None:
     """Deletes a session."""
 
+  async def count_events(
+      self,
+      *,
+      app_name: str,
+      user_id: str,
+      session_id: str,
+  ) -> int:
+    raise NotImplementedError(
+        f'{type(self).__name__} does not implement count_events'
+    )
+
   async def append_event(self, session: Session, event: Event) -> Event:
     """Appends an event to a session object."""
     if event.partial:

@@ -59,6 +59,14 @@ class ResumabilityConfig(BaseModel):
   """
 
 
+class ExpandingWindowConfig(BaseModel):
+  model_config = ConfigDict(extra="forbid")
+
+  window_size: int = Field(gt=0)
+  step_size: int = Field(gt=0)
+  buffer_size: int = Field(default=50, ge=0)
+
+
 @experimental
 class EventsCompactionConfig(BaseModel):
   """The config of event compaction for an application."""
@@ -144,6 +152,8 @@ class App(BaseModel):
   The config of the resumability for the application.
   If configured, will be applied to all agents in the app.
   """
+
+  expanding_window_config: Optional[ExpandingWindowConfig] = None
 
   @model_validator(mode="after")
   def _validate_name(self) -> App:

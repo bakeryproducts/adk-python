@@ -28,6 +28,7 @@ from typing import TypeVar
 from google.adk.platform import time as platform_time
 from sqlalchemy import delete
 from sqlalchemy import event
+from sqlalchemy import func
 from sqlalchemy import MetaData
 from sqlalchemy import select
 from sqlalchemy.engine import Connection
@@ -483,6 +484,29 @@ class DatabaseSessionService(BaseSessionService):
           state=merged_state, is_sqlite=is_sqlite
       )
     return session
+
+  @override
+  async def count_events(
+      self,
+      *,
+      app_name: str,
+      user_id: str,
+      session_id: str,
+  ) -> int:
+    await self._prepare_tables()
+    schema = self._get_schema_classes()
+    async with self._rollback_on_exception_session(
+        read_only=True
+    ) as sql_session:
+      stmt = (
+          select(func.count())
+          .select_from(schema.StorageEvent)
+          .filter(schema.StorageEvent.app_name == app_name)
+          .filter(schema.StorageEvent.user_id == user_id)
+          .filter(schema.StorageEvent.session_id == session_id)
+      )
+      result = await sql_session.execute(stmt)
+      return result.scalar() or 0
 
   @override
   async def get_session(

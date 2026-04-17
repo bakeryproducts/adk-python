@@ -284,6 +284,23 @@ class InMemorySessionService(BaseSessionService):
     return ListSessionsResponse(sessions=sessions_without_events)
 
   @override
+  async def count_events(
+      self,
+      *,
+      app_name: str,
+      user_id: str,
+      session_id: str,
+  ) -> int:
+    if app_name not in self.sessions:
+      return 0
+    if user_id not in self.sessions[app_name]:
+      return 0
+    session = self.sessions[app_name][user_id].get(session_id)
+    if session is None:
+      return 0
+    return len(session.events)
+
+  @override
   async def delete_session(
       self, *, app_name: str, user_id: str, session_id: str
   ) -> None:

@@ -40,6 +40,7 @@ from .agents.invocation_context import new_invocation_context_id
 from .agents.live_request_queue import LiveRequestQueue
 from .agents.run_config import RunConfig
 from .apps.app import App
+from .apps.app import ExpandingWindowConfig
 from .apps.app import ResumabilityConfig
 from .artifacts.base_artifact_service import BaseArtifactService
 from .artifacts.in_memory_artifact_service import InMemoryArtifactService
@@ -419,12 +420,19 @@ class Runner:
       SessionNotFoundError: If the session is not found and
         auto_create_session is False.
     """
+    get_session_config = await self._maybe_apply_expanding_window(
+        user_id=user_id,
+        session_id=session_id,
+        get_session_config=get_session_config,
+    )
     session = await self.session_service.get_session(
         app_name=self.app_name,
         user_id=user_id,
         session_id=session_id,
         config=get_session_config,
     )
+    if session:
+      self._trim_to_user_message(session)
     if not session:
       if self.auto_create_session:
         session = await self.session_service.create_session(
@@ -434,6 +442,48 @@ class Runner:
         message = self._format_session_not_found_message(session_id)
         raise SessionNotFoundError(message)
     return session
+
+  async def _maybe_apply_expanding_window(
+      self,
+      *,
+      user_id: str,
+      session_id: str,
+      get_session_config: Optional[GetSessionConfig],
+  ) -> Optional[GetSessionConfig]:
+    if get_session_config is not None:
+      return get_session_config
+    if not self.app or not self.app.expanding_window_config:
+      return None
+
+    cfg = self.app.expanding_window_config
+    total = await self.session_service.count_events(
+        app_name=self.app_name, user_id=user_id, session_id=session_id
+    )
+    if total <= cfg.window_size:
+      return None
+
+    start_offset = ((total - cfg.window_size) // cfg.step_size) * cfg.step_size
+    num_recent = total - start_offset + cfg.buffer_size
+    return GetSessionConfig(num_recent_events=num_recent)
+
+  def _trim_to_user_message(self, session: Session) -> None:
+    if not self.app or not self.app.expanding_window_config:
+      return
+    cfg = self.app.expanding_window_config
+    if not session.events or len(session.events) <= cfg.window_size:
+      return
+
+    # Events layout: [buffer (extra old events) | intended window start | ...]
+    # Scan backward from intended start into the buffer to find a user message.
+    # This keeps all intended events plus a few extra for a clean cut point.
+    search_start = min(cfg.buffer_size, len(session.events) - 1)
+    for i in range(search_start, -1, -1):
+      ev = session.events[i]
+      if ev.content and ev.content.role == 'user':
+        session.events = session.events[i:]
+        return
+    # No user message in buffer — trim at intended start.
+    session.events = session.events[search_start:]
 
   def run(
       self,
