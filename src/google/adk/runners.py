@@ -420,10 +420,12 @@ class Runner:
       SessionNotFoundError: If the session is not found and
         auto_create_session is False.
     """
-    get_session_config = await self._maybe_apply_expanding_window(
-        user_id=user_id,
-        session_id=session_id,
-        get_session_config=get_session_config,
+    get_session_config, window_num_recent = (
+        await self._maybe_apply_expanding_window(
+            user_id=user_id,
+            session_id=session_id,
+            get_session_config=get_session_config,
+        )
     )
     session = await self.session_service.get_session(
         app_name=self.app_name,
@@ -431,8 +433,8 @@ class Runner:
         session_id=session_id,
         config=get_session_config,
     )
-    if session:
-      self._trim_to_user_message(session)
+    if session and window_num_recent is not None:
+      self._trim_to_user_message(session, window_num_recent)
     if not session:
       if self.auto_create_session:
         session = await self.session_service.create_session(
@@ -449,41 +451,45 @@ class Runner:
       user_id: str,
       session_id: str,
       get_session_config: Optional[GetSessionConfig],
-  ) -> Optional[GetSessionConfig]:
+  ) -> tuple[Optional[GetSessionConfig], Optional[int]]:
     if get_session_config is not None:
-      return get_session_config
+      return get_session_config, None
     if not self.app or not self.app.expanding_window_config:
-      return None
+      return None, None
 
     cfg = self.app.expanding_window_config
     total = await self.session_service.count_events(
         app_name=self.app_name, user_id=user_id, session_id=session_id
     )
     if total <= cfg.window_size:
-      return None
+      return None, None
 
     start_offset = ((total - cfg.window_size) // cfg.step_size) * cfg.step_size
-    num_recent = total - start_offset + cfg.buffer_size
-    return GetSessionConfig(num_recent_events=num_recent)
+    num_recent = total - start_offset
+    config = GetSessionConfig(
+        num_recent_events=num_recent + cfg.buffer_size
+    )
+    return config, num_recent
 
-  def _trim_to_user_message(self, session: Session) -> None:
-    if not self.app or not self.app.expanding_window_config:
+  def _trim_to_user_message(
+      self, session: Session, num_recent: int
+  ) -> None:
+    if not session.events:
       return
-    cfg = self.app.expanding_window_config
-    if not session.events or len(session.events) <= cfg.window_size:
+    # actual_buffer = events loaded beyond the intended window
+    actual_buffer = max(0, len(session.events) - num_recent)
+    if actual_buffer == 0:
       return
 
-    # Events layout: [buffer (extra old events) | intended window start | ...]
-    # Scan backward from intended start into the buffer to find a user message.
-    # This keeps all intended events plus a few extra for a clean cut point.
-    search_start = min(cfg.buffer_size, len(session.events) - 1)
-    for i in range(search_start, -1, -1):
+    # Scan backward from intended window start into the buffer
+    # to find a user message for a clean cut point.
+    for i in range(actual_buffer, -1, -1):
       ev = session.events[i]
       if ev.content and ev.content.role == 'user':
         session.events = session.events[i:]
         return
     # No user message in buffer — trim at intended start.
-    session.events = session.events[search_start:]
+    session.events = session.events[actual_buffer:]
 
   def run(
       self,
