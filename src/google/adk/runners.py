@@ -111,6 +111,55 @@ def _apply_run_config_custom_metadata(
   }
 
 
+def _is_function_response_content(content: types.Content) -> bool:
+  """Returns whether a content contains function responses."""
+  return bool(content.parts) and any(
+      part.function_response is not None for part in content.parts
+  )
+
+
+def _is_human_user_content(content: types.Content) -> bool:
+  """Returns whether a content represents human user input (not tool output).
+
+  In ADK, function/tool responses are carried in content with role='user'.
+  This helper distinguishes a genuine user turn from a tool response.
+  """
+  return content.role == 'user' and not _is_function_response_content(content)
+
+
+def _adjust_split_to_avoid_orphaned_function_responses(
+    events: list[Event], split_index: int
+) -> int:
+  """Moves `split_index` left until function calls/responses stay paired.
+
+  When truncating session events, we must avoid keeping a `function_response`
+  while dropping its matching preceding `function_call`. Events with no
+  `content` are skipped.
+
+  Args:
+    events: Full session events in chronological order.
+    split_index: Candidate split index (keep `events[split_index:]`).
+
+  Returns:
+    A (possibly smaller) split index that preserves call/response pairs.
+  """
+  needed_call_ids: set[str] = set()
+  for i in range(len(events) - 1, -1, -1):
+    content = events[i].content
+    parts = content.parts if content else None
+    if parts:
+      for part in reversed(parts):
+        if part.function_response and part.function_response.id:
+          needed_call_ids.add(part.function_response.id)
+        if part.function_call and part.function_call.id:
+          needed_call_ids.discard(part.function_call.id)
+
+    if i <= split_index and not needed_call_ids:
+      return i
+
+  return 0
+
+
 class Runner:
   """The Runner class is used to run agents.
 
@@ -481,15 +530,27 @@ class Runner:
     if actual_buffer == 0:
       return
 
-    # Scan backward from intended window start into the buffer
-    # to find a user message for a clean cut point.
+    # Scan backward from intended window start into the buffer to find a
+    # human-user message for a clean cut point. Function responses also carry
+    # role='user' in ADK; cutting on one would orphan its matching
+    # function_call in the preceding (dropped) turn, causing the model to
+    # re-issue the tool call and loop.
+    cut_index = None
     for i in range(actual_buffer, -1, -1):
       ev = session.events[i]
-      if ev.content and ev.content.role == 'user':
-        session.events = session.events[i:]
-        return
-    # No user message in buffer — trim at intended start.
-    session.events = session.events[actual_buffer:]
+      if ev.content and _is_human_user_content(ev.content):
+        cut_index = i
+        break
+
+    if cut_index is None:
+      # No human-user message in buffer — fall back to the intended start,
+      # then adjust left to avoid orphaning function_responses whose matching
+      # function_calls would be dropped.
+      cut_index = _adjust_split_to_avoid_orphaned_function_responses(
+          session.events, actual_buffer
+      )
+
+    session.events = session.events[cut_index:]
 
   def run(
       self,
